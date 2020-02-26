@@ -3,19 +3,21 @@ namespace App\Services;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
+use App\Services\Domains;
 use App\Attack;
 
 class AttackHandler
 {
 
-    private $mode;
-    private $count;
-    // private $domains;
+    // private $mode;
+    // private $count;
+    private $d;
 
     public function __construct()
     {
-        $this->mode = 0;
-        $this->count = 0;
+        $this->d = new Domains;
+        // $this->mode = 0;
+        // $this->count = 0;
         // $this->db_domains = Attack::all();
         return $this->process();
     }
@@ -23,10 +25,11 @@ class AttackHandler
     public function process()
     {
         $file = file('/var/log/nginx/ecu.de-access.log');
-        // $db_domains = Attack::all();
+
         $result = $this->filter_domains($file);
 
         if ($result) return true;
+
         else return false;
     }
 
@@ -39,79 +42,80 @@ class AttackHandler
         $domains = [];
         $rate_bench = ENV('RATE_LIMIT_TIME') * ENV('RATE_LIMIT_COUNT');
         $attack_bench = ENV('ATTACK_TIME') * ENV('ATTACK_COUNT');
+        $rate_of_bench = ENV('RATE_LIMIT_OF_TIME') * ENV('RATE_LIMIT_OF_COUNT');
 
         foreach ($data as $line => $row) {
 
             $tmp = explode(" ", $row);
-            $time = substr($tmp[3],13); // attack time
-            $log_domain = $tmp[2]; // domain name string
-            // $interval = 0;
-            $k = null;
+            $row_time = substr($tmp[3],13); // attack time
+            $row_domain = $tmp[2]; // domain name string
 
             if ($line == 0) {
-                // get first domain naim from database, if not found in database - create new record
-                $db_domains[] = $this->db_get($log_domain);
-                // Log::info(dump($this->domains));
-                // create new domains array ([0] name, [1] latest request time, [2] request count )
-                $domains[] = [$log_domain, $time, 0];
+                // create new domains object array
+                $this->d->add($row_domain, $row_time);
                 continue;
             } else {
-                // find matching domain name in saved domains arr
-                foreach ($domains as $key => $dom) {
-                    if ($dom[0] == $log_domain) {
-                        $k = $key;
-                        break;
-                    }
-                }
-                // if domain names match
-                if (isset($k)) {
-                    // if time mach previous record
-                    if ($domains[$k][1] == $time) $domains[$k][2] += 1; // increment attack count per second
-
-                    $interval = $this->time_diff($domains[$k][1], $time);
-                    // use ENV('ATTACK_COUNT') instead of 1
-                    if ($interval > ENV('RATE_LIMIT_TIME')) {
-
-                        if ($domains[$k][2] > $rate_bench) {
-                            Attack::where('domain', $log_domain)->update(['rate_limiting' => 1]);
+                // find matching domain name in temp object domains
+                if (isset($this->d->domains[$row_domain])) {
+                    // increase counter each time domain repeats
+                    $this->d->domains[$row_domain]['count'] += 1;
+                    // when counter reach rate limit count benchmark
+                    if ($this->d->domains[$row_domain]['count'] >= $rate_bench
+                        && $this->d->domains[$row_domain]['rate_limiting'] == 0) {
+                        // find time interval in seconds
+                        $interval = $this->time_diff($this->d->domains[$row_domain]['created'], $row_time);
+                        //when time interval is less or equal to rate limit time limit
+                        if ($interval <= ENV('RATE_LIMIT_TIME')) {
+                            // update time
+                            $this->d->domains[$row_domain]['updated'] = $row_time;
+                            // set database to rate limiting mode 'on'
+                            Attack::where('domain', $row_domain)->update(['rate_limiting' => 1]);
                         }
-                        // use ENV('ATTACK_TIME') instead of 2 (150), write to db
-                        if ( $domains[$k][2] > $attack_bench
-                            && $interval > ENV('RATE_LIMIT_TIME')) {
-                            Attack::where('domain', $log_domain)->update(['attack_mode' => 1]);
+                    // when counter reach attack mode count benchmark
+                    } elseif ($this->d->domains[$row_domain]['count'] >= $attack_bench
+                        && $this->d->domains[$row_domain]['attack_mode'] == 0) {
+                        // find time interval in seconds
+                        $interval = $this->time_diff($this->d->domains[$row_domain]['created'], $row_time);
+                        // when time intervall is less or equal to attack mode time limit
+                        if ($interval <= ENV('ATTACK_TIME')) {
+                            // update time
+                            $this->d->domains[$row_domain]['updated'] = $row_time;
+                            // set attack mode on for domains object
+                            $this->d->domains[$row_domain]['attack_mode'] = 1;
+                            // set attack mode in database
+                            Attack::where('domain', $row_domain)->update(['attack_mode' => 1]);
+                        } else {
+                            // when benchmark is not reached, reset time and count and set rate limiting off
+                            $this->reset_arr($row_domain, $row_time);
+                            $this->d->domains[$row_domain]['rate_limiting'] = 0;
                         }
-                    } else {
-                        // when time do not match but name match, update arr time atribute
-                        $domains[$k][1] = $time;
+                    // turn off rate limiting when count is below benchmark
+                    } elseif ($this->d->domains[$row_domain]['count'] <= $rate_of_bench) {
+                        // find time interval in seconds
+                        $interval = $this->time_diff($this->d->domains[$row_domain]['created'], $row_time);
+                        // when interval is bigger than rate limit benchmark
+                        if ($interval >= ENV('RATE_LIMIT_OF_TIME')) {
+                            // set database to rate limiting mode 'on'
+                            Attack::where('domain', $row_domain)->update(['rate_limiting' => 0]);
+                            // reset object domain time and count
+                            $this->reset_arr($row_domain, $row_time);
+                            $this->d->domains[$row_domain]['rate_limiting'] = 0;
+                        }
                     }
+                // when new log file record domain is not in object domains
                 } else {
-                    // when domain not found, place new arrays row
-                    $db_domains[] = $this->db_get($log_domain);
-                    $domains[] = [ $log_domain, $time, 0 ];
+                    $this->d->add($row_domain, $row_time); // add new domain to object array
                 }
             }
         }
-        dd($db_domains);
+        // dd($db_domains);
     }
 
-    public function handle_domain( $domain )
+    public function reset_arr( $domain, $time )
     {
-        $db_domain = Attack::where('domain', $domain)->get();
-        dd($db_domain);
-        if ($db_domain) {
-
-            if ($db_domain->attack_mode == 0 && $db_domain->rate_limiting == 0)
-                $db_domain->attack_mode = 1;
-
-            elseif ($db_domain->attack_mode == 1 && $db_domain->rate_limiting == 0)
-                $db_domain->rate_limiting = 1;
-        } else {
-            $new_attack = Attack::create([
-                'domain' => $domain,
-                'attack_mode' => 1,
-            ]);
-            $new_attack->save();
-        }
+        $this->d->domains[$domain]['created'] = $time;
+        $this->d->domains[$domain]['updated'] = $time;
+        $this->d->domains[$domain]['count'] = 0;
     }
     /**
      * counts interval in seconds

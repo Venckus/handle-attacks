@@ -4,6 +4,7 @@ namespace App\Services;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 use App\Services\Domains;
+use App\Services\LogFile;
 use App\Attack;
 
 class AttackHandler
@@ -13,24 +14,30 @@ class AttackHandler
     // private $count;
     private $d;
 
-    public function __construct()
+    public function __construct($path)
     {
         $this->d = new Domains;
         // $this->mode = 0;
         // $this->count = 0;
         // $this->db_domains = Attack::all();
-        return $this->process();
+        return $this->process($path);
     }
 
-    public function process()
+    public function process($path)
     {
-        $file = file('/var/log/nginx/ecu.de-access.log');
+        // $file = file('/var/log/nginx/ecu.de-access.log');
+        $file = new LogFile($path);
 
-        $result = $this->filter_domains($file);
+        // dd($file->backwards());
+        // $iterator = $file->iterate();
+        // foreach ($iterator as $line) {
+        //     dd($line);
+        // }
+        // $result = $this->filter_domains($file);
 
-        if ($result) return true;
+        // if ($result) return true;
 
-        else return false;
+        // else return false;
     }
 
     /**

@@ -30,9 +30,9 @@ class CheckAttacksJob implements ShouldQueue
      *
      * @return void
      */
-    public function handle()
+    public function handle($path)
     {
-        $attack_handler = new AttackHandler();
+        $attack_handler = new AttackHandler($path);
 
         if (! $attack_handler) Log::info('Job Attack handle went wrong');
     }

@@ -3,7 +3,9 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use App\Jobs\CheckAttacksJob;
+use Illuminate\Support\Facades\Log;
+
+use App\Services\AttackHandler;
 
 class CheckAttacks extends Command
 {
@@ -12,7 +14,7 @@ class CheckAttacks extends Command
      *
      * @var string
      */
-    protected $signature = 'check:attacks';
+    protected $signature = 'check:attacks {path}';
 
     /**
      * The console command description.
@@ -38,6 +40,11 @@ class CheckAttacks extends Command
      */
     public function handle()
     {
-        CheckAttacksJob::dispatch();
+        $path = $this->argument('path');
+        dump($path);
+
+        $result = new AttackHandler($path);
+        if (! $result) Log::info('Job Attack handle went wrong');
+        // CheckAttacksJob::dispatch($path);
     }
 }

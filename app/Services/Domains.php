@@ -22,11 +22,27 @@ class Domains
         // $this->domains[$name] = $domain;
         $this->domains[$name] = [
             'count' => 0,
-            // 'seconds' => 0,
+            'seconds' => 0,
             'attack_mode' => 0,
             'rate_limiting' => 0,
             'created' => $created,
             'updated'=> $created
         ];
+    }
+    
+    public function filter_domains()
+    {
+        foreach ($this->domains as $domain){
+
+            if ( $domain['seconds'] >= ENV('ATTACK_TIME') 
+                && $domain['count'] >= ENV('ATTACK_TIME') * ENV('ATTACK_COUNT')) {
+
+
+            }
+
+            if ($domain['seconds'] < 360) unset($this->domains[$domain]);
+
+
+        }
     }
 }

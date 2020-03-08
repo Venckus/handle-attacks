@@ -12,123 +12,82 @@ class AttackHandler
 
     // private $mode;
     // private $count;
-    private $d;
+    private $d, $db_domains, $now;
 
     public function __construct($path)
     {
         $this->d = new Domains;
-        // $this->mode = 0;
-        // $this->count = 0;
-        // $this->db_domains = Attack::all();
+
+        $this->db_domains = Attack::all();
+        
+        $now = new \DateTime(date('h:i:s',strtotime('now')));
+
+        $this->now = $now->format('h:i:s');
+        
         return $this->process($path);
     }
 
     public function process($path)
     {
-        // $file = file('/var/log/nginx/ecu.de-access.log');
-        $file = new LogFile($path);
+        // read file from the end
+        $reversed = popen("tac $path","r");
 
-        // dd($file->backwards());
-        // $iterator = $file->iterate();
-        // foreach ($iterator as $line) {
-        //     dd($line);
-        // }
-        // $result = $this->filter_domains($file);
+        // read lines one by one 
+        while ($line = fgets($reversed)) {
 
-        // if ($result) return true;
-
-        // else return false;
-    }
-
-    /**
-     *
-     * @return mixed
-     */
-    public function filter_domains( $data )
-    {
-        $domains = [];
-        $rate_bench = ENV('RATE_LIMIT_TIME') * ENV('RATE_LIMIT_COUNT');
-        $attack_bench = ENV('ATTACK_TIME') * ENV('ATTACK_COUNT');
-        $rate_of_bench = ENV('RATE_LIMIT_OF_TIME') * ENV('RATE_LIMIT_OF_COUNT');
-
-        foreach ($data as $line => $row) {
-
-            $tmp = explode(" ", $row);
-            $row_time = substr($tmp[3],13); // attack time
+            $tmp = explode(" ", $line); // get time and domain name array
             $row_domain = $tmp[2]; // domain name string
+            $row_time = substr($tmp[3],13); // attack time
 
-            if ($line == 0) {
-                // create new domains object array
-                $this->d->add($row_domain, $row_time);
-                continue;
-            } else {
-                // find matching domain name in temp object domains
-                if (isset($this->d->domains[$row_domain])) {
-                    // increase counter each time domain repeats
-                    $this->d->domains[$row_domain]['count'] += 1;
-                    // when counter reach rate limit count benchmark
-                    if ($this->d->domains[$row_domain]['count'] >= $rate_bench
-                        && $this->d->domains[$row_domain]['rate_limiting'] == 0) {
-                        // find time interval in seconds
-                        $interval = $this->time_diff($this->d->domains[$row_domain]['created'], $row_time);
-                        //when time interval is less or equal to rate limit time limit
-                        if ($interval <= ENV('RATE_LIMIT_TIME')) {
-                            // update time
-                            $this->d->domains[$row_domain]['updated'] = $row_time;
-                            // set database to rate limiting mode 'on'
-                            Attack::where('domain', $row_domain)->update(['rate_limiting' => 1]);
-                        }
-                    // when counter reach attack mode count benchmark
-                    } elseif ($this->d->domains[$row_domain]['count'] >= $attack_bench
-                        && $this->d->domains[$row_domain]['attack_mode'] == 0) {
-                        // find time interval in seconds
-                        $interval = $this->time_diff($this->d->domains[$row_domain]['created'], $row_time);
-                        // when time intervall is less or equal to attack mode time limit
-                        if ($interval <= ENV('ATTACK_TIME')) {
-                            // update time
-                            $this->d->domains[$row_domain]['updated'] = $row_time;
-                            // set attack mode on for domains object
-                            $this->d->domains[$row_domain]['attack_mode'] = 1;
-                            // set attack mode in database
-                            Attack::where('domain', $row_domain)->update(['attack_mode' => 1]);
-                        } else {
-                            // when benchmark is not reached, reset time and count and set rate limiting off
-                            $this->reset_arr($row_domain, $row_time);
-                            $this->d->domains[$row_domain]['rate_limiting'] = 0;
-                        }
-                    // turn off rate limiting when count is below benchmark
-                    } elseif ($this->d->domains[$row_domain]['count'] <= $rate_of_bench) {
-                        // find time interval in seconds
-                        $interval = $this->time_diff($this->d->domains[$row_domain]['created'], $row_time);
-                        // when interval is bigger than rate limit benchmark
-                        if ($interval >= ENV('RATE_LIMIT_OF_TIME')) {
-                            // set database to rate limiting mode 'on'
-                            Attack::where('domain', $row_domain)->update(['rate_limiting' => 0]);
-                            // reset object domain time and count
-                            $this->reset_arr($row_domain, $row_time);
-                            $this->d->domains[$row_domain]['rate_limiting'] = 0;
-                        }
-                    }
-                // when new log file record domain is not in object domains
-                } else {
-                    $this->d->add($row_domain, $row_time); // add new domain to object array
-                }
-            }
+             // when log file time goes back more than 6 minutes
+            if ($this->time_diff($this->now, $row_time) > 360) {
+
+                break; // stop reading file
+
+            } else $this->check_domain($row_domain, $row_time);
         }
-        // dd($db_domains);
+        // update DB domains modes
+        $this->db_update();
     }
 
-    public function reset_arr( $domain, $time )
+    public function check_domain($row_domain, $row_time)
     {
-        $this->d->domains[$domain]['created'] = $time;
-        $this->d->domains[$domain]['updated'] = $time;
-        $this->d->domains[$domain]['count'] = 0;
+        if (isset($this->d->domains[$row_domain])) {
+
+            if ($this->d->domains[$row_domain]['updated'] == $row_time) {
+
+                // increase counter each time domain repeats
+                $this->d->domains[$row_domain]['count'] += 1;
+
+            } else $this->update_counters($row_domain, $row_time);
+
+        } else $this->d->add($row_domain, $row_time);
     }
+
+    public function update_counters($domain, $time)
+    {
+        // find time interval in seconds
+        $interval = $this->time_diff($this->d->domains[$domain]['updated'], $time);
+
+        if ($interval == 1
+            && $this->d->domains[$domain]['count'] >= ENV('ATTACK_COUNT')) {
+
+            $this->d->domains[$domain]['seconds'] += 1;
+            $this->d->domains[$domain]['count'] = 0;
+        }            
+        if ($interval > ENV('ATTACK_TIME')
+            && $this->d->domains[$domain]['seconds'] >= ENV('ATTACK_TIME')) {
+
+            $this->d->domains[$domain]['attack_mode'] = 1;
+        }
+        $this->d->domains[$domain]['updated'] = $time;
+    }
+
     /**
      * counts interval in seconds
      * @return int
      */
-    public function time_diff($a , $b)
+    public function time_diff($a, $b)
     {
         $timeA = new \DateTime(date('h:i:s',strtotime($a)));
         $timeB = new \DateTime(date('h:i:s',strtotime($b)));
@@ -139,13 +98,19 @@ class AttackHandler
         return $seconds;
     }
 
-    private function db_get($name)
+    private function db_update()
     {
-        try {
-            $db_domain = Attack::firstOrCreate(['domain' => $name]);
-        } catch (\Exception $e) {
-            dd($e);
+        foreach ($this->d->domains as $domain) {
+
+            if ($domain['attack_mode'] == 1) {
+
+                Attack::where('domain', $domain)->update(['attack_mode' => 1]);
+
+                if ($domain['rate_limiting'] == 1) {
+
+                    Attack::where('domain', $domain)->update(['rate_limiting' => 1]);
+                }
+            }
         }
-        return $db_domain;
     }
 }

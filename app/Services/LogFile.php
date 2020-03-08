@@ -12,13 +12,13 @@ class LogFile
 
             throw new \Exception("File not found");
         }
-        // $this->rew 
-        $rews = popen("tac $filename",'r');
-        while ($line = fgets($rews)) {
+        $this->rew = popen("tac $filename",'r');
+        // $rews = popen("tac $filename",'r');
+        // while ($line = fgets($rews)) {
 
-            dd($line);
-         }
-        $this->file = new \SplFileObject($filename, $mode);
+        //     dump($line);
+        //  }
+        // $this->file = new \SplFileObject($filename, $mode);
     }
 
     protected function iterateText()
@@ -42,12 +42,17 @@ class LogFile
     public function backwards()//$date)
     {
         $c = 0;
-        $res = [];
+        while (!$this->rew->eof()) {
+            yield $this->rew->fgets();
+            $c++;
+         }
+        return $c;
+        // $res = [];
         // while ($date <= $f_date) {
-        while ($c > -3) {
-            $res[] = $this->file->fseek($c,SEEK_END);
-            $c--;
-        }
-        return $res;
+        // while ($c > -3) {
+        //     $res[] = $this->file->fseek($c,SEEK_END);
+        //     $c--;
+        // }
+        // return $res;
     }
 }

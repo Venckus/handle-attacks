@@ -41,10 +41,9 @@ class CheckAttacks extends Command
     public function handle()
     {
         $path = $this->argument('path');
-        dump($path);
 
         $result = new AttackHandler($path);
+        
         if (! $result) Log::info('Job Attack handle went wrong');
-        // CheckAttacksJob::dispatch($path);
     }
 }

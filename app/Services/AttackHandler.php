@@ -17,18 +17,19 @@ class AttackHandler
     public function __construct($path)
     {
         $this->d = new Domains;
-
-        $this->db_domains = Attack::all();
         
-        $now = new \DateTime(date('h:i:s',strtotime('now')));
-
-        $this->now = $now->format('h:i:s');
+        // uncomment this for actual 'now' time
+        // $now = new \DateTime(date('h:i:s',strtotime('now')));
+        // this is only for testing purposes
+        $this->now = "13:36:59"; // $now->format('h:i:s');
         
         return $this->process($path);
     }
 
     public function process($path)
     {
+        // get all domains with attack mode on from DB
+        $this->select_domains();
         // read file from the end
         $reversed = popen("tac $path","r");
 
@@ -46,15 +47,21 @@ class AttackHandler
 
             } else $this->check_domain($row_domain, $row_time);
         }
+        pclose($reversed);
         // update DB domains modes
-        $this->db_update();
+        if ($this->d->domains != []) $this->db_update();
+    }
+
+    public function select_domains()
+    {
+        $this->db_domains = Attack::where('attack_mode', 1)->get();
     }
 
     public function check_domain($row_domain, $row_time)
     {
         if (isset($this->d->domains[$row_domain])) {
 
-            if ($this->d->domains[$row_domain]['updated'] == $row_time) {
+            if ($this->d->domains[$row_domain]['a_updated'] == $row_time) {
 
                 // increase counter each time domain repeats
                 $this->d->domains[$row_domain]['count'] += 1;
@@ -64,23 +71,57 @@ class AttackHandler
         } else $this->d->add($row_domain, $row_time);
     }
 
-    public function update_counters($domain, $time)
+    public function update_counters($domain, $row_time)
     {
-        // find time interval in seconds
-        $interval = $this->time_diff($this->d->domains[$domain]['updated'], $time);
+        // when attack mode is off
+        if ($this->d->domains[$domain]['attack_mode'] == 0) {
+            
+            $this->check_attack_mode($domain, $row_time);
+
+        // when attack mode is on
+        } else {
+            $this->check_rate_limit($domain, $row_time);
+        }
+        $this->d->domains[$domain]['count'] = 0;
+    }
+
+    public function check_rate_limit($domain, $row_time)
+    {
+        $interval = $this->time_diff($this->d->domains[$domain]['r_updated'], $row_time);
+
+        if ($interval == 1) {
+
+            if ($this->d->domains[$domain]['count'] >= (int)config('attack.rate.count')) {
+
+                $this->d->domains[$domain]['rate_seconds'] += 1;
+                $this->d->domains[$domain]['r_updated'] = $row_time;
+
+            } elseif ($this->d->domains[$domain]['count'] < (int)config('attack.rate_off.count')) {
+
+                $this->d->domains[$domain]['rate_off_seconds'] += 1;
+            }
+
+        } elseif ($this->d->domains[$domain]['rate_limit_mode'] == 1
+                && $this->d->domains[$domain]['rate_off_seconds'] >= (int)config('attack.rate_off.time')) {
+
+            $this->d->domains[$domain]['rate_limit_mode'] = 0;
+        }
+        
+    }
+
+    public function check_attack_mode($domain, $row_time)
+    {
+        $interval = $this->time_diff($this->d->domains[$domain]['a_updated'], $row_time);
 
         if ($interval == 1
-            && $this->d->domains[$domain]['count'] >= ENV('ATTACK_COUNT')) {
-
-            $this->d->domains[$domain]['seconds'] += 1;
-            $this->d->domains[$domain]['count'] = 0;
+        && $this->d->domains[$domain]['count'] >= (int)config('attack.mode.count')) {
+        
+        $this->d->domains[$domain]['a_seconds'] += 1; dump("$domain adding seconds:");dump($this->d->domains[$domain]);  
         }            
-        if ($interval > ENV('ATTACK_TIME')
-            && $this->d->domains[$domain]['seconds'] >= ENV('ATTACK_TIME')) {
+        if ($this->d->domains[$domain]['a_seconds'] >= (int)config('attack.mode.time')) {
 
-            $this->d->domains[$domain]['attack_mode'] = 1;
+            $this->d->domains[$domain]['attack_mode'] = 1; dump("$domain ATTACK MODE ON");dump($this->d->domains[$domain]);
         }
-        $this->d->domains[$domain]['updated'] = $time;
     }
 
     /**
@@ -100,13 +141,19 @@ class AttackHandler
 
     private function db_update()
     {
-        foreach ($this->d->domains as $domain) {
+        foreach ($this->d->domains as $domain => $v) {
+            
+            if ($v['attack_mode'] == 1 && $this->db_domains->domain == $domain) {
+                
+                $db_domain = Attack::where('domain', $domain)->get();
+                
+                if ($db_domain->check_attack_mode == 0) {
+                    $db_domain->check_attack_mode = 1;
+                    $db_domain->save();
+                }
+                // Attack::where('domain', $domain)->update(['attack_mode' => 1]);
 
-            if ($domain['attack_mode'] == 1) {
-
-                Attack::where('domain', $domain)->update(['attack_mode' => 1]);
-
-                if ($domain['rate_limiting'] == 1) {
+                if ($v['rate_limit_mode'] == 1) {
 
                     Attack::where('domain', $domain)->update(['rate_limiting' => 1]);
                 }

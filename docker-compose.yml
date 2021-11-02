@@ -1,0 +1,36 @@
+version: "3"
+
+services:
+
+  limiter-app:
+    container_name: limiter_app
+    extra_hosts:
+      - "host.docker.internal:192.168.0.104"
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    depends_on:
+      - limiter-db
+    networks:
+      - limiter-net
+    ports:
+      - 8900:80
+    volumes:
+      - ./:/var/www
+      - ./docker/php.ini:/usr/local/etc/php/php.ini
+
+  limiter-db:
+    image: mariadb:10.4.10
+    container_name: limiter_db
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: limiter
+      MYSQL_USER: limiter
+      MYSQL_PASSWORD: limiter
+    networks:
+      - limiter-net
+    ports:
+      - 3400:3306
+    
+networks:
+  limiter-net: {}

@@ -6,7 +6,7 @@
  * 
  */
 return [
-    'mode' => [
+    'modeOn' => [
         'time' => ENV('ATTACK_TIME', 10),
         'count' => ENV('ATTACK_COUNT', 15),
     ],

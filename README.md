@@ -26,3 +26,6 @@ Modes calculation is performed after check on how many time intervals (seconds) 
 
 ## command for cronjob
 use command 'php artisan check:attacks path_to_file' or `file_name` if access.log is in `storage/logs/` for cronjob.
+
+# TODO
+* finish with saving attack modes to DB in handlers.

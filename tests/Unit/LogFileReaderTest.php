@@ -4,31 +4,35 @@ namespace Tests\Unit;
 
 use DateTime;
 use App\Services\LogFileReader;
+use DateInterval;
+use Dotenv\Regex\Result;
+use Illuminate\Http\Resources\Json\Resource;
 use PHPUnit\Framework\TestCase;
 
 class LogFileReaderTest extends TestCase
 {
-    public function testFilePathIsCorrect()
-    {
-        $LogFileReader = new LogFileReader('ecu.de-access.log');
-        $filePath = '/var/www/storage/logs/ecu.de-access.log';
-        $this->assertEquals($filePath, $LogFileReader->getFileName());
-    }
+    const LOG_FILE_NAME = 'ecu.de-access.log';
+    private LogFileReader $LogFileReader;
 
+    protected function setUp(): void
+    {
+        $this->LogFileReader = new LogFileReader(self::LOG_FILE_NAME);
+        parent::setUp();
+    }
 
     /**
      * @dataProvider oneLineProvider
      */
-    public function testGetDatetimeAndDomain($line, $dateTimeExpected, $domainExpected)
+    public function testGetDatetimeAndDomain($line, $dateTimeExpected, $domainExpected): void
     {
-        $LogFileReader = new LogFileReader('ecu.de-access.log');
-        list($dateTime, $domainName) = $LogFileReader->getDatetimeAndDomain($line);
+        list($dateTime, $domainName) = $this->LogFileReader->extractDatetimeAndDomain($line);
+
         $this->assertEquals($domainExpected, $domainName);
         $this->assertInstanceOf(DateTime::class, $dateTime);
         $this->assertEquals($dateTimeExpected, $dateTime->format('Y-m-d H:i:s'));
     }
 
-    public function oneLineProvider()
+    public function oneLineProvider(): array
     {
         return [
             [
@@ -44,43 +48,55 @@ class LogFileReaderTest extends TestCase
         ];
     }
 
-    public function testLoadFile()
+    public function testLoadFile(): void
     {
-        $LogFileReader = new LogFileReader('ecu.de-access.log');
-        $LogFileReader->loadFile();
-        $line = $LogFileReader->getOneLine();
+        $this->LogFileReader->loadFile();
+
+        $this->assertObjectHasAttribute('fileHandle', $this->LogFileReader);
+    }
+
+    public function testReadOneLine(): void
+    {
+        $this->LogFileReader->loadFile();
+        $line = $this->LogFileReader->readOneLine();
+        
         $this->assertNotEmpty($line);
         $this->assertInstanceOf(\Generator::class, $line);
     }
 
     /**
-     * @dataProvider executeResultProvider
+     * @dataProvider filenameProvider
      */
-    public function testExecute($fileName, $expectedResult, $expectedDomainsCount)
+    public function testSetFileName($filename, $fullPath): void
     {
-        $LogFileReader = new LogFileReader($fileName);
-        $result = $LogFileReader->execute();
-        $domainCollection = $LogFileReader->getDomainCollection();
-        $this->assertGreaterThanOrEqual(
-            $expectedDomainsCount,
-            count(array_keys($LogFileReader->getDomainCollection()->domainList))
+        $LogFileReader = new LogFileReader($filename, $fullPath);
+        $that = $this;
+
+        $assertPropertyClosure = function () use ($that, $filename, $fullPath) {
+            if ($fullPath) {
+                $that->assertEquals($filename, $this->fileName);
+            } else {
+                $that->assertStringContainsString($filename, $this->fileName);
+            }
+        };
+        $doAssertPropertyClosure = $assertPropertyClosure->bindTo(
+            $LogFileReader,
+            get_class($LogFileReader)
         );
-        $this->assertEquals($expectedResult, $result);
+        
+        $doAssertPropertyClosure();
     }
 
-    public function executeResultProvider()
+    public function filenameProvider(): array
     {
         return [
             [
-                'ecu.de-access.log',
-                'processed',
-                4,
+                'some.file',
+                false
+            ],[
+                'logs/some.file',
+                true
             ],
-            [
-                'wrongLogFile.exe',
-                null,
-                0
-            ]
         ];
     }
 }

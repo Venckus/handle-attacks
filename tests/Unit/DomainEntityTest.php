@@ -8,7 +8,7 @@ use App\Entities\DomainEntity;
 
 class DomainEntityTest extends TestCase
 {
-    public function testUpdateCount()
+    public function testUpdateCount(): void
     {
         $DomainEntity = new DomainEntity();
         $dateTime = new DateTime('2021-10-30 12:09:01');
@@ -21,5 +21,6 @@ class DomainEntityTest extends TestCase
             $requests, 
             $DomainEntity->timestamps[$dateTime->getTimestamp()]['requestCount']
         );
+        $this->assertEquals(2, count($DomainEntity->timestamps));
     }
 }

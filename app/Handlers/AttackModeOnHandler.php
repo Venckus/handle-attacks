@@ -7,29 +7,27 @@ use App\Entities\DomainEntity;
 
 class AttackModeOnHandler extends ModeHandler
 {
-    private string $attackLevel = '';
 
     public function __construct(string $attackLevel)
     {
         $this->attackLevel = $attackLevel;
     }
 
-    public function check(DomainEntity $domain, bool $isSequentialPeriods = true) : bool
+    public function check(DomainEntity $domain, bool $isSequentialPeriods = true): bool
     {
-        if (count($domain->timestamps) >= config('attack.' . $this->attackLevel . '.time')) {
+        if (count($domain->timestamps) >= $this->getAttackTimelimit()) {
             $this->setIsSequentialPeriods($isSequentialPeriods);
-            $result = parent::calculateMode(
+            $result = $this->calculateMode(
                 $domain,
-                (int) config('attack.' . $this->attackLevel . '.count'),
-                (int) config('attack.' . $this->attackLevel . '.time')
+                $this->getAttackCountlimit(),
+                $this->getAttackTimelimit()
             );
             if ($result) {
                 $domain->limitMode = true;
-                // save domain mode to DB here.
             }
             return $result;
         } else {
-            return parent::check($domain);
+            return parent::check($domain, $isSequentialPeriods);
         }
     }
 }

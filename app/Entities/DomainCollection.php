@@ -9,8 +9,14 @@ use App\Handlers\AttackModeOffHandler;
 
 class DomainCollection
 {
-    public $domainList = [];
+    /** @var array[DomainEntity] */
+    public array $domainList = [];
 
+    /**
+     * @param string $domainName
+     * 
+     * @return void
+     */
     public function addDomain(string $domainName) : void
     {
         if (array_key_exists($domainName, $this->domainList)) {
@@ -20,14 +26,18 @@ class DomainCollection
         }
     }
 
-    public function calculateModes()
+    /**
+     * @return void
+     */
+    public function calculateModes(): void
     {
         foreach ($this->domainList as $domain) {
             if (count($domain->timestamps) >= config('attack.modeOn.count')) {
-                $modeHandler = new AttackModeOnHandler('limitOn');
-                $modeHandler->setNext(new AttackModeHandler('modeOn'))
-                    ->setNext(new AttackModeOffHandler('limitOff'));
-                $result = $modeHandler->check($domain);
+                $modeHandler = new AttackModeOnHandler(AttackLevels::LIMIT_ON);
+                $modeHandler
+                    ->setNext(new AttackModeOnHandler(AttackLevels::MODE_ON))
+                    ->setNext(new AttackModeOffHandler(AttackLevels::LIMIT_OFF));
+                $modeHandler->check($domain);
             }
         }
     }

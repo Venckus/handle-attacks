@@ -8,7 +8,7 @@ use App\Entities\DomainEntity;
 
 class DomainCollectionTest extends TestCase
 {
-    public function testAddDomain()
+    public function testAddDomain(): void
     {
         $DomainCollection = new DomainCollection();
         $generator = $this->domainNameProvider();
@@ -20,7 +20,7 @@ class DomainCollectionTest extends TestCase
         }
     }
 
-    public function domainNameProvider()
+    protected function domainNameProvider()
     {
         $arr = [
             ['bedu.edu', 1],

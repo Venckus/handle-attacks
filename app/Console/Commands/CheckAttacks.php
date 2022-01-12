@@ -5,7 +5,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
-use App\Services\AttackHandler;
+use App\Services\LogFileReader;
 
 class CheckAttacks extends Command
 {
@@ -42,8 +42,7 @@ class CheckAttacks extends Command
     {
         $path = $this->argument('path');
 
-        $result = new AttackHandler($path);
-        
-        if (! $result) Log::info('Job Attack handle went wrong');
+        $LogFileReader = new LogFileReader($path);
+        $LogFileReader->execute();
     }
 }
